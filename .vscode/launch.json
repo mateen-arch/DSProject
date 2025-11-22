@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch SFML",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "D:\\Mateen\\Test\\main.exe",
+            "args": [],
+            "cwd": "D:\\Mateen\\Test",
+            "console": "externalTerminal"
+        }
+    ]
+}
