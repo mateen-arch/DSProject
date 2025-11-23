@@ -281,7 +281,58 @@ ShortestRouteResult findShortestRouteData(Port* src) {
     }
     return s;
 }
+struct UserPreferences {
+    vector<string> preferredCompanies;
+    vector<string> avoidPorts;
+    int maxVoyageTime;  // in minutes
+    bool hasCompanyFilter;
+    bool hasPortFilter;
+    bool hasTimeFilter;
+};
+bool routeMatchesPreferences(const Route& route, const UserPreferences& prefs) const {
+    // Check company preference
+    if (prefs.hasCompanyFilter) {
+        bool companyFound = false;
+        for (const string& company : prefs.preferredCompanies) {
+            if (route.company == company) {
+                companyFound = true;
+                break;
+            }
+        }
+        if (!companyFound) return false;
+    }
+    
+    // Check voyage time
+    if (prefs.hasTimeFilter) {
+        if (route.travelTime > prefs.maxVoyageTime) {
+            return false;
+        }
+    }
+    
+    return true;
+}
 
+bool portIsAvoid(const string& portName, const UserPreferences& prefs) const {
+    if (!prefs.hasPortFilter) return false;
+    
+    for (const string& avoidPort : prefs.avoidPorts) {
+        if (portName == avoidPort) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Get all unique shipping companies
+vector<string> getAllShippingCompanies() const {
+    set<string> companies;
+    for (int i = 0; i < routes.size(); i++) {
+        for (const Route& route : routes[i]) {
+            companies.insert(route.company);
+        }
+    }
+    return vector<string>(companies.begin(), companies.end());
+}
     void displayGraph() {
         printPorts();
         for (int i = 0; i < ports.size(); i++) {
@@ -1339,10 +1390,35 @@ vector<string> getPortInfo(const Location& location, Graph& graph) {
         info.push_back("Port not found in database!");
         return info;
     }
+    info.push_back("Port Name: " + graph.ports[portIdx].name);
+    info.push_back("");
     info.push_back("Port Charge: $" + to_string(graph.ports[portIdx].cost));
     info.push_back("");
-    info.push_back("Available Routes:");
-    info.push_back("----------------------------------------");
+        info.push_back("========== PORT STATISTICS ==========");
+    info.push_back("");
+    
+    // Count incoming and outgoing routes
+    int outgoingRoutes = graph.routes[portIdx].size();
+    int incomingRoutes = 0;
+    
+    for (int i = 0; i < graph.routes.size(); i++) {
+        for (const Route& route : graph.routes[i]) {
+            if (route.destination == graph.ports[portIdx].name) {
+                incomingRoutes++;
+            }
+        }
+    }
+    
+    info.push_back("Outgoing Routes: " + to_string(outgoingRoutes));
+    info.push_back("Incoming Routes: " + to_string(incomingRoutes));
+    info.push_back("Total Connections: " + to_string(outgoingRoutes + incomingRoutes));
+    info.push_back("");
+    info.push_back("========== LOCATION ==========");
+    info.push_back("");
+    info.push_back("Coordinates: (" + to_string((int)location.position.x) + ", " + 
+                   to_string((int)location.position.y) + ")");
+    info.push_back("");
+    info.push_back("========== AVAILABLE ROUTES ==========");
     if (graph.routes[portIdx].empty()) {
         info.push_back("No routes available from this port.");
     } else {
@@ -1364,7 +1440,311 @@ void showSettings() {
     // Settings can be displayed in an info window or separate UI
     // For now, this is a placeholder for future SFML-based settings
 }
-
+class FilterPreferencesMenu {
+private:
+    vector<Button*> buttons;
+    Text titleText;
+    bool isVisible;
+    Font* font;
+    float windowWidth;
+    float windowHeight;
+    Texture* oceanTexture;    
+    Sprite oceanBackground; 
+public:
+    FilterPreferencesMenu(Font& f, float winWidth, float winHeight, Texture& oceanTex) 
+        : font(&f), isVisible(false), windowWidth(winWidth), windowHeight(winHeight), 
+          oceanTexture(&oceanTex) {
+        
+        titleText.setFont(f);
+        titleText.setCharacterSize(48);
+        titleText.setFillColor(Color::White);
+        titleText.setOutlineThickness(2);
+        titleText.setOutlineColor(Color::Black);
+        
+        // Setup ocean background
+        oceanBackground.setTexture(*oceanTexture);
+        Vector2u textureSize = oceanTexture->getSize();
+        float scaleX = (float)winWidth / textureSize.x;
+        float scaleY = (float)winHeight / textureSize.y;
+        oceanBackground.setScale(scaleX, scaleY);
+    }
+    
+    ~FilterPreferencesMenu() {
+        for (auto btn : buttons) {
+            delete btn;
+        }
+    }
+    
+    void createMainMenu() {
+        clearButtons();
+        titleText.setString("Filter Preferences");
+        
+        float buttonWidth = 400;
+        float buttonHeight = 70;
+        float centerX = (windowWidth - buttonWidth) / 2;
+        float startY = windowHeight * 0.2f;
+        float spacing = buttonHeight + 15;
+        
+        buttons.push_back(new Button(Vector2f(centerX, startY), Vector2f(buttonWidth, buttonHeight), "Shipping Companies", *font));
+        buttons.push_back(new Button(Vector2f(centerX, startY + spacing), Vector2f(buttonWidth, buttonHeight), "Avoid Specific Ports", *font));
+        buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 2), Vector2f(buttonWidth, buttonHeight), "Voyage Time", *font));
+        buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 3), Vector2f(buttonWidth, buttonHeight), "Custom Preferences", *font));
+        buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 4.5f), Vector2f(buttonWidth, buttonHeight), "Back", *font));
+    }
+    void createTimeMenuForCustom() {
+    clearButtons();
+    titleText.setString("Set Maximum Voyage Time (in hours)");
+    
+    float buttonWidth = 300;
+    float buttonHeight = 60;
+    float centerX = (windowWidth - buttonWidth) / 2;
+    float startY = windowHeight * 0.2f;
+    float spacing = buttonHeight + 15;
+    
+    buttons.push_back(new Button(Vector2f(centerX, startY), Vector2f(buttonWidth, buttonHeight), "8 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing), Vector2f(buttonWidth, buttonHeight), "16 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 2), Vector2f(buttonWidth, buttonHeight), "24 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 3), Vector2f(buttonWidth, buttonHeight), "48 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 4), Vector2f(buttonWidth, buttonHeight), "No Limit", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 5.5f), Vector2f(buttonWidth, buttonHeight), "Done", *font));
+}
+void createCompanyMenu(const vector<string>& companies) {
+    clearButtons();
+    titleText.setString("Select Shipping Companies");
+    
+    float buttonWidth = 250;
+    float buttonHeight = 60;
+    float startX = 100;
+    float startY = windowHeight * 0.15f;
+    float spacingX = buttonWidth + 30;
+    float spacingY = buttonHeight + 20;
+    
+    int cols = 4;  // Number of columns
+    int col = 0;
+    int row = 0;
+    
+    for (const string& company : companies) {
+        float x = startX + (col * spacingX);
+        float y = startY + (row * spacingY);
+        
+        buttons.push_back(new Button(Vector2f(x, y), Vector2f(buttonWidth, buttonHeight), company, *font));
+        
+        col++;
+        if (col >= cols) {
+            col = 0;
+            row++;
+        }
+    }
+    
+    // Add Done button at the bottom
+    float doneX = (windowWidth - 250) / 2;
+    float doneY = startY + ((row + 1) * spacingY) + 30;
+    buttons.push_back(new Button(Vector2f(doneX, doneY), Vector2f(250, 60), "Done", *font));
+}
+    
+ void createPortMenu(const vector<Port>& ports) {
+    clearButtons();
+    titleText.setString("Select Ports to Avoid");
+    
+    float buttonWidth = 250;
+    float buttonHeight = 60;
+    float startX = 100;
+    float startY = windowHeight * 0.15f;
+    float spacingX = buttonWidth + 30;
+    float spacingY = buttonHeight + 10;  // <-- Reduced spacing to fit more
+    
+    int cols = 4;
+    int col = 0;
+    int row = 0;
+    
+    for (const Port& port : ports) {
+        float x = startX + (col * spacingX);
+        float y = startY + (row * spacingY);
+        
+        buttons.push_back(new Button(Vector2f(x, y), Vector2f(buttonWidth, buttonHeight), port.name, *font));
+        
+        col++;
+        if (col >= cols) {
+            col = 0;
+            row++;
+        }
+    }
+    
+    // Add Done button at the bottom with less space
+    float doneX = (windowWidth - 250) / 2;
+    float doneY = startY + ((row + 1) * spacingY);  // <-- Moved up slightly
+    buttons.push_back(new Button(Vector2f(doneX, doneY), Vector2f(250, 60), "Done", *font));
+}
+    void createTimeMenu() {
+    clearButtons();
+    titleText.setString("Set Maximum Voyage Time (in hours)");
+    
+    float buttonWidth = 300;
+    float buttonHeight = 60;
+    float centerX = (windowWidth - buttonWidth) / 2;
+    float startY = windowHeight * 0.3f;
+    float spacing = buttonHeight + 20;
+    
+    // Display preset time options
+    buttons.push_back(new Button(Vector2f(centerX, startY), Vector2f(buttonWidth, buttonHeight), "8 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing), Vector2f(buttonWidth, buttonHeight), "16 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 2), Vector2f(buttonWidth, buttonHeight), "24 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 3), Vector2f(buttonWidth, buttonHeight), "48 hours", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 4), Vector2f(buttonWidth, buttonHeight), "No Limit", *font));
+    buttons.push_back(new Button(Vector2f(centerX, startY + spacing * 5.5f), Vector2f(buttonWidth, buttonHeight), "Back", *font));
+}
+    void clearButtons() {
+        for (auto btn : buttons) {
+            delete btn;
+        }
+        buttons.clear();
+    }
+    
+    void show() {
+        isVisible = true;
+        createMainMenu();
+    }
+    
+    void hide() {
+        isVisible = false;
+        clearButtons();
+    }
+    
+    bool visible() const {
+        return isVisible;
+    }
+    
+    void update(RenderWindow& window) {
+        if (isVisible) {
+            for (auto btn : buttons) {
+                btn->update(window);
+            }
+        }
+    }
+    
+    void draw(RenderWindow& window) {
+        if (isVisible) {
+            // Draw ocean background
+            window.draw(oceanBackground);
+            
+            // Draw semi-transparent overlay for better readability
+            RectangleShape overlay(Vector2f(windowWidth, windowHeight));
+            overlay.setFillColor(Color(0, 0, 0, 100));  // Semi-transparent black
+            window.draw(overlay);
+            
+            FloatRect bounds = titleText.getLocalBounds();
+            titleText.setOrigin(bounds.left + bounds.width / 2, bounds.top);
+            titleText.setPosition(windowWidth / 2, 40);
+            window.draw(titleText);
+            
+            for (auto btn : buttons) {
+                btn->draw(window);
+            }
+        }
+    }
+    
+    int checkClick(RenderWindow& window, Event& event) {
+        if (!isVisible) return -1;
+        
+        for (int i = 0; i < buttons.size(); i++) {
+            if (buttons[i]->isClicked(window, event)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+    
+    int getButtonCount() const {
+        return buttons.size();
+    }
+};
+void customShipPreferences(const Graph::UserPreferences& prefs, 
+                          vector<Location>& locations, 
+                          vector<RouteEdge>& edges, 
+                          const Graph& g) {
+    
+    cout << "\n=== Applying Custom Ship Preferences ===" << endl;
+    
+    // Color ports based on preferences
+    for (int i = 0; i < locations.size(); i++) {
+        bool isAvoidPort = g.portIsAvoid(locations[i].name, prefs);
+        
+        if (isAvoidPort) {
+            // Grey - avoid/filtered out port
+            locations[i].pin.setFillColor(Color(150, 150, 150));      // Grey
+            locations[i].pin.setOutlineColor(Color(100, 100, 100));
+            locations[i].label.setFillColor(Color(100, 100, 100));
+            cout << "Port " << locations[i].name << " marked as AVOID (Grey)" << endl;
+        } else {
+            // Bright Green - preferred/allowed port
+            locations[i].pin.setFillColor(Color(0, 255, 0));          // Bright Green
+            locations[i].pin.setOutlineColor(Color(0, 180, 0));
+            locations[i].label.setFillColor(Color::White);
+            cout << "Port " << locations[i].name << " marked as ALLOWED (Green)" << endl;
+        }
+    }
+    
+    // Color routes based on preferences
+    int allowedRoutes = 0;
+    int blockedRoutes = 0;
+    
+    for (auto& edge : edges) {
+        // Check if source or destination port is avoided
+        bool sourceAvoid = g.portIsAvoid(edge.sourceName, prefs);
+        bool destAvoid = g.portIsAvoid(edge.routeInfo.destination, prefs);
+        
+        if (sourceAvoid || destAvoid) {
+            // Grey with low opacity - blocked/filtered route
+            edge.line.setFillColor(Color(150, 150, 150, 100));
+            blockedRoutes++;
+            cout << "Route blocked: " << edge.sourceName << " -> " << edge.routeInfo.destination 
+                 << " (Avoid port)" << endl;
+        }
+        else if (g.routeMatchesPreferences(edge.routeInfo, prefs)) {
+            // Bright Green - matches preferences
+            edge.line.setFillColor(Color(0, 255, 0, 255));
+            allowedRoutes++;
+            cout << "Route allowed: " << edge.sourceName << " -> " << edge.routeInfo.destination 
+                 << " (Matches preferences)" << endl;
+        } else {
+            // Grey - doesn't match preferences
+            edge.line.setFillColor(Color(150, 150, 150, 100));
+            blockedRoutes++;
+            cout << "Route not preferred: " << edge.sourceName << " -> " << edge.routeInfo.destination 
+                 << " (Different company/time)" << endl;
+        }
+    }
+    
+    cout << "\nRoute Summary:" << endl;
+    cout << "Allowed routes: " << allowedRoutes << endl;
+    cout << "Blocked/Not preferred routes: " << blockedRoutes << endl;
+    
+    // Print applied preferences
+    cout << "\nApplied Preferences:" << endl;
+    
+    if (prefs.hasCompanyFilter) {
+        cout << "Preferred Companies: ";
+        for (const string& company : prefs.preferredCompanies) {
+            cout << company << " ";
+        }
+        cout << endl;
+    }
+    
+    if (prefs.hasPortFilter) {
+        cout << "Avoid Ports: ";
+        for (const string& port : prefs.avoidPorts) {
+            cout << port << " ";
+        }
+        cout << endl;
+    }
+    
+    if (prefs.hasTimeFilter) {
+        cout << "Max Voyage Time: " << prefs.maxVoyageTime << " minutes (" 
+             << (prefs.maxVoyageTime / 60) << "h " << (prefs.maxVoyageTime % 60) << "m)" << endl;
+    }
+    
+    cout << "======================================\n" << endl;
+}
 enum GameState {
     MAIN_MENU,
     NAVIGATION_MENU,
@@ -1374,8 +1754,17 @@ enum GameState {
     SHORTEST_ROUTE_SELECT,
     CHEAPEST_ROUTE_SELECT,
     FILTER_PREFERENCES,
+    FILTER_MAIN_MENU,       
+    FILTER_COMPANIES,        
+    FILTER_PORTS,            
+    FILTER_TIME,          
+    FILTER_CUSTOM,           
+    FILTER_RESULT_MAP,       
     PROCESS_LAYOVERS,
     TRACK_MULTI_LEG,
+    FILTER_CUSTOM_COMPANIES,   
+    FILTER_CUSTOM_PORTS,       
+    FILTER_CUSTOM_TIME,        
     SUBGRAPH
 };
 
@@ -1384,7 +1773,12 @@ int main() {
     Graph g;
     g.parsePorts("PortCharges.txt");
     g.parseRoute("Routes.txt");
-    
+    vector<string> availableCompanies = g.getAllShippingCompanies();
+cout << "Available companies: ";
+for (const string& company : availableCompanies) {
+    cout << company << " ";
+}
+cout << endl;
     Font font;
     if (!font.loadFromFile("arial.ttf")) {
         cout << "Error: Could not load arial.ttf, trying system font..." << endl;
@@ -1427,7 +1821,7 @@ int main() {
     vector<RouteEdge> edges;
     RouteTooltip routeTooltip(font);
     InfoWindow infoWindow(font, windowWidth, windowHeight);
-    
+
     // Initialize the route display window
     RouteDisplayWindow* routeDisplayWindow = new RouteDisplayWindow(font, windowWidth, windowHeight);
     
@@ -1443,6 +1837,20 @@ int main() {
     vector<RouteEdge> cheapestPathEdges;
     bool cheapestRouteCalculated = false;
     
+    // Filter preferences variables
+Graph::UserPreferences userPreferences = {
+    {},      // preferredCompanies
+    {},      // avoidPorts
+    999999,  // maxVoyageTime
+    false,   // hasCompanyFilter
+    false,   // hasPortFilter
+    false    // hasTimeFilter
+};
+
+int filterMenuState = 0;  // 0=main, 1=companies, 2=ports, 3=time, 4=custom
+vector<Button*> filterButtons;
+Text filterMenuTitle;
+
     // Search routes variables
     vector<RouteEdge> highlightedRoutes;
     bool routesDisplayed = false;
@@ -1476,7 +1884,7 @@ int main() {
     Button settingsButton(Vector2f(centerX, windowHeight * 0.50f), Vector2f(buttonWidth, buttonHeight), "Settings", font);
     Button exitButton(Vector2f(centerX, windowHeight * 0.65f), Vector2f(buttonWidth, buttonHeight), "Exit", font);
     NavigationMenu navMenu(font, windowWidth, windowHeight);
-    
+    FilterPreferencesMenu filterMenu(font, windowWidth, windowHeight, oceanTexture);
     GameState currentState = MAIN_MENU;
     
     while (window.isOpen()) { 
@@ -1568,10 +1976,11 @@ int main() {
                     currentState = CHEAPEST_ROUTE_SELECT;
                     navMenu.hide();
                 }
-                else if (clicked == 5) { // Filter Preferences
-                    currentState = FILTER_PREFERENCES;
-                    navMenu.hide();
-                }
+else if (clicked == 5) { 
+    currentState = FILTER_PREFERENCES;
+    filterMenu.show();
+    navMenu.hide();
+}
                 else if (clicked == 6) { // Process Layovers
                     currentState = PROCESS_LAYOVERS;
                     navMenu.hide();
@@ -1878,7 +2287,39 @@ if (shortestRouteResult.found && shortestRouteResult.dist[destIdx] != INF) {
                     }
                 }
             }
-            
+            else if (currentState == FILTER_RESULT_MAP && !infoWindow.visible()) {
+    bool locationClicked = false;
+    
+    // Check if clicked on a port/location first (higher priority)
+    for (auto& location : locations) {
+        if (location.isClicked(window, event)) {
+            // Only show info if port is NOT greyed out (is allowed)
+            if (!g.portIsAvoid(location.name, userPreferences)) {
+                vector<string> portInfo = getPortInfo(location, g);
+                infoWindow.show(location.name, portInfo);
+                locationClicked = true;
+                break;
+            }
+        }
+    }
+    
+    // If no location clicked, then check for route edge clicks
+    if (!locationClicked) {
+        for (int i = 0; i < edges.size(); i++) {
+            if (edges[i].isClicked(window, event)) {
+                // Only show info if route is NOT greyed out (is allowed)
+                bool sourceAvoid = g.portIsAvoid(edges[i].sourceName, userPreferences);
+                bool destAvoid = g.portIsAvoid(edges[i].routeInfo.destination, userPreferences);
+                
+                if (!sourceAvoid && !destAvoid && g.routeMatchesPreferences(edges[i].routeInfo, userPreferences)) {
+                    vector<string> routeDetails = edges[i].getRouteDetails();
+                    infoWindow.show("Route Information", routeDetails);
+                    break;
+                }
+            }
+        }
+    }
+}
             // Cheapest Route handling
             else if (currentState == CHEAPEST_ROUTE_SELECT && !infoWindow.visible()) {
                 bool locationClicked = false;
@@ -1986,13 +2427,253 @@ if (shortestRouteResult.found && shortestRouteResult.dist[destIdx] != INF) {
                     }
                 }
             }
+            else if (currentState == FILTER_PREFERENCES) {
+                int clicked = filterMenu.checkClick(window, event);
+                if (clicked == 0) {
+                    currentState = FILTER_COMPANIES;
+                    filterMenu.createCompanyMenu(availableCompanies);
+                    cout << "Showing shipping companies filter menu" << endl;
+                }
+                else if (clicked == 1) {
+                    currentState = FILTER_PORTS;
+                    filterMenu.createPortMenu(g.ports);
+                    cout << "Showing avoid ports filter menu" << endl;
+                }
+else if (clicked == 2) {
+    currentState = FILTER_TIME;
+    filterMenu.createTimeMenu();  // <-- Add this line
+    cout << "Showing voyage time filter menu" << endl;
+}
+    else if (clicked == 3) {
+        currentState = FILTER_CUSTOM_COMPANIES;  // <-- Changed from FILTER_CUSTOM
+        filterMenu.createCompanyMenu(availableCompanies);
+        cout << "Showing custom preferences menu (step 1: companies)" << endl;
+    }
+                else if (clicked == 4) {
+                    currentState = NAVIGATION_MENU;
+                    navMenu.show();
+                    filterMenu.hide();
+                    cout << "Back to navigation menu" << endl;
+                }
+            }
+else if (currentState == FILTER_COMPANIES) {
+    int clicked = filterMenu.checkClick(window, event);
+    if (clicked != -1) {
+        if (clicked == filterMenu.getButtonCount() - 1) {
+            // Done button
+            userPreferences.hasCompanyFilter = true;
+            
+            // Load map and apply filters
+            loadMapView(mapTexture, mapSprite, locations, edges, window, font, g);
+            customShipPreferences(userPreferences, locations, edges, g);
+            
+            currentState = FILTER_RESULT_MAP;
+            cout << "Company filter applied, showing filtered map" << endl;
+        } else if (clicked < availableCompanies.size()) {
+            // Company selected
+            string selectedCompany = availableCompanies[clicked];
+            auto it = find(userPreferences.preferredCompanies.begin(), 
+                          userPreferences.preferredCompanies.end(), selectedCompany);
+            if (it == userPreferences.preferredCompanies.end()) {
+                userPreferences.preferredCompanies.push_back(selectedCompany);
+                cout << "Selected company: " << selectedCompany << endl;
+            } else {
+                userPreferences.preferredCompanies.erase(it);
+                cout << "Deselected company: " << selectedCompany << endl;
+            }
+        }
+    }
+}
+else if (currentState == FILTER_PORTS) {
+    int clicked = filterMenu.checkClick(window, event);
+    if (clicked != -1) {
+        if (clicked == filterMenu.getButtonCount() - 1) {
+            // Done button
+            userPreferences.hasPortFilter = true;
+            
+            // Load map and apply filters
+            loadMapView(mapTexture, mapSprite, locations, edges, window, font, g);
+            customShipPreferences(userPreferences, locations, edges, g);
+            
+            currentState = FILTER_RESULT_MAP;
+            cout << "Port filter applied, showing filtered map" << endl;
+        } else if (clicked < g.ports.size()) {
+            // Port selected
+            string selectedPort = g.ports[clicked].name;
+            auto it = find(userPreferences.avoidPorts.begin(), 
+                          userPreferences.avoidPorts.end(), selectedPort);
+            if (it == userPreferences.avoidPorts.end()) {
+                userPreferences.avoidPorts.push_back(selectedPort);
+                cout << "Avoid port: " << selectedPort << endl;
+            } else {
+                userPreferences.avoidPorts.erase(it);
+                cout << "Include port: " << selectedPort << endl;
+            }
+        }
+    }
+}
+else if (currentState == FILTER_TIME) {
+    int clicked = filterMenu.checkClick(window, event);
+    if (clicked != -1) {
+        bool timeSelected = false;
+        
+        if (clicked == 0) {
+            userPreferences.maxVoyageTime = 8 * 60;  // 8 hours in minutes
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 8 hours, showing filtered map" << endl;
+        }
+        else if (clicked == 1) {
+            userPreferences.maxVoyageTime = 16 * 60;  // 16 hours
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 16 hours, showing filtered map" << endl;
+        }
+        else if (clicked == 2) {
+            userPreferences.maxVoyageTime = 24 * 60;  // 24 hours
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 24 hours, showing filtered map" << endl;
+        }
+        else if (clicked == 3) {
+            userPreferences.maxVoyageTime = 48 * 60;  // 48 hours
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 48 hours, showing filtered map" << endl;
+        }
+        else if (clicked == 4) {
+            userPreferences.hasTimeFilter = false;
+            userPreferences.maxVoyageTime = 999999;
+            timeSelected = true;
+            cout << "No voyage time limit" << endl;
+        }
+        else if (clicked == 5) {
+            // Back button
+            currentState = FILTER_PREFERENCES;
+            filterMenu.createMainMenu();
+        }
+        
+        // If time was selected, show the map
+        if (timeSelected) {
+            loadMapView(mapTexture, mapSprite, locations, edges, window, font, g);
+            customShipPreferences(userPreferences, locations, edges, g);
+            currentState = FILTER_RESULT_MAP;
+        }
+    }
+    
+    if (event.type == Event::KeyPressed && event.key.code == Keyboard::Escape) {
+        currentState = FILTER_PREFERENCES;
+        filterMenu.createMainMenu();
+    }
+}
+else if (currentState == FILTER_CUSTOM_COMPANIES) {
+    int clicked = filterMenu.checkClick(window, event);
+    if (clicked != -1) {
+        if (clicked == filterMenu.getButtonCount() - 1) {
+            // Done button - move to ports
+            userPreferences.hasCompanyFilter = true;
+            filterMenu.createPortMenu(g.ports);
+            currentState = FILTER_CUSTOM_PORTS;
+            cout << "Company preferences set, now showing ports" << endl;
+        } else if (clicked < availableCompanies.size()) {
+            // Company selected
+            string selectedCompany = availableCompanies[clicked];
+            auto it = find(userPreferences.preferredCompanies.begin(), 
+                          userPreferences.preferredCompanies.end(), selectedCompany);
+            if (it == userPreferences.preferredCompanies.end()) {
+                userPreferences.preferredCompanies.push_back(selectedCompany);
+                cout << "Selected company: " << selectedCompany << endl;
+            } else {
+                userPreferences.preferredCompanies.erase(it);
+                cout << "Deselected company: " << selectedCompany << endl;
+            }
+        }
+    }
+}
+
+else if (currentState == FILTER_CUSTOM_PORTS) {
+    int clicked = filterMenu.checkClick(window, event);
+    if (clicked != -1) {
+        if (clicked == filterMenu.getButtonCount() - 1) {
+            // Done button - move to time
+            userPreferences.hasPortFilter = true;
+            filterMenu.createTimeMenuForCustom();
+            currentState = FILTER_CUSTOM_TIME;
+            cout << "Port preferences set, now showing voyage time" << endl;
+        } else if (clicked < g.ports.size()) {
+            // Port selected
+            string selectedPort = g.ports[clicked].name;
+            auto it = find(userPreferences.avoidPorts.begin(), 
+                          userPreferences.avoidPorts.end(), selectedPort);
+            if (it == userPreferences.avoidPorts.end()) {
+                userPreferences.avoidPorts.push_back(selectedPort);
+                cout << "Avoid port: " << selectedPort << endl;
+            } else {
+                userPreferences.avoidPorts.erase(it);
+                cout << "Include port: " << selectedPort << endl;
+            }
+        }
+    }
+}
+
+else if (currentState == FILTER_CUSTOM_TIME) {
+    int clicked = filterMenu.checkClick(window, event);
+    if (clicked != -1) {
+        bool timeSelected = false;
+        
+        if (clicked == 0) {
+            userPreferences.maxVoyageTime = 8 * 60;
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 8 hours" << endl;
+        }
+        else if (clicked == 1) {
+            userPreferences.maxVoyageTime = 16 * 60;
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 16 hours" << endl;
+        }
+        else if (clicked == 2) {
+            userPreferences.maxVoyageTime = 24 * 60;
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 24 hours" << endl;
+        }
+        else if (clicked == 3) {
+            userPreferences.maxVoyageTime = 48 * 60;
+            userPreferences.hasTimeFilter = true;
+            timeSelected = true;
+            cout << "Max voyage time set to 48 hours" << endl;
+        }
+        else if (clicked == 4) {
+            userPreferences.hasTimeFilter = false;
+            userPreferences.maxVoyageTime = 999999;
+            timeSelected = true;
+            cout << "No voyage time limit" << endl;
+        }
+        else if (clicked == 5) {
+            // Done button - show filtered map
+            timeSelected = true;
+            cout << "All custom preferences applied, showing filtered map" << endl;
+        }
+        
+        if (timeSelected) {
+            loadMapView(mapTexture, mapSprite, locations, edges, window, font, g);
+            customShipPreferences(userPreferences, locations, edges, g);
+            currentState = FILTER_RESULT_MAP;
+        }
+    }
+}
             
             // ESC key handling for all states
 // ESC key handling - find this section and ensure it clears properly
 if ((currentState == MAP_VIEW || currentState == SEARCH_ROUTES || currentState == BOOK_CARGO || 
-     currentState == FILTER_PREFERENCES || currentState == PROCESS_LAYOVERS ||
+     currentState == FILTER_PREFERENCES || currentState == FILTER_COMPANIES || 
+     currentState == FILTER_PORTS || currentState == FILTER_TIME || currentState == FILTER_CUSTOM || currentState == PROCESS_LAYOVERS ||
      currentState == TRACK_MULTI_LEG || currentState == SUBGRAPH ||
-     currentState == SHORTEST_ROUTE_SELECT || currentState == CHEAPEST_ROUTE_SELECT) && 
+     currentState == SHORTEST_ROUTE_SELECT || currentState == CHEAPEST_ROUTE_SELECT || 
+     currentState == FILTER_CUSTOM_COMPANIES || currentState == FILTER_CUSTOM_PORTS || 
+     currentState == FILTER_CUSTOM_TIME) && 
     event.type == Event::KeyPressed && event.key.code == Keyboard::Escape) {
     
     selectedPorts.clear();
@@ -2002,7 +2683,11 @@ if ((currentState == MAP_VIEW || currentState == SEARCH_ROUTES || currentState =
     shortestRouteCalculated = false;
     cheapestRouteCalculated = false;
     routesDisplayed = false;
-    
+    userPreferences.hasCompanyFilter = false;
+    userPreferences.hasPortFilter = false;
+    userPreferences.hasTimeFilter = false;
+    userPreferences.preferredCompanies.clear();
+    userPreferences.avoidPorts.clear();
     // Close any open windows
     routeDisplayWindow->hide();
     infoWindow.hide();
@@ -2014,7 +2699,18 @@ if ((currentState == MAP_VIEW || currentState == SEARCH_ROUTES || currentState =
     currentState = NAVIGATION_MENU;
     navMenu.show();
 }
-        
+        if (currentState == FILTER_RESULT_MAP && event.type == Event::KeyPressed && event.key.code == Keyboard::Escape) {
+    currentState = FILTER_PREFERENCES;
+    filterMenu.createMainMenu();
+    
+    // Reset preferences
+    userPreferences.preferredCompanies.clear();
+    userPreferences.avoidPorts.clear();
+    userPreferences.hasCompanyFilter = false;
+    userPreferences.hasPortFilter = false;
+    userPreferences.hasTimeFilter = false;
+    cout << "Back to filter preferences" << endl;
+}
         // UPDATE SECTION
         if (currentState == MAIN_MENU) {
             startButton.update(window);
@@ -2033,6 +2729,15 @@ if ((currentState == MAP_VIEW || currentState == SEARCH_ROUTES || currentState =
             }
             infoWindow.update(window);
         }
+        else if (currentState == FILTER_RESULT_MAP) {
+    for (auto& edge : edges) {
+        edge.update(window);
+    }
+    for (auto& location : locations) {
+        location.update(window);
+    }
+    infoWindow.update(window);
+}
         else if (currentState == SEARCH_ROUTES) {
             for (auto& edge : edges) {
                 edge.update(window);
@@ -2043,7 +2748,7 @@ if ((currentState == MAP_VIEW || currentState == SEARCH_ROUTES || currentState =
             for (auto& location : locations) {
                 location.update(window);
             }
-            routeDisplayWindow->update(window);
+            infoWindow.update(window);
         }
         else if (currentState == SHORTEST_ROUTE_SELECT) {
             for (auto& edge : edges) {
@@ -2069,6 +2774,12 @@ if ((currentState == MAP_VIEW || currentState == SEARCH_ROUTES || currentState =
             }
             infoWindow.update(window);
         }
+else if (currentState == FILTER_PREFERENCES || currentState == FILTER_COMPANIES || 
+         currentState == FILTER_PORTS || currentState == FILTER_TIME || 
+         currentState == FILTER_CUSTOM_COMPANIES || currentState == FILTER_CUSTOM_PORTS || 
+         currentState == FILTER_CUSTOM_TIME) {
+    filterMenu.update(window);
+}
         
         // RENDERING SECTION
         window.clear(); 
@@ -2097,7 +2808,17 @@ if ((currentState == MAP_VIEW || currentState == SEARCH_ROUTES || currentState =
                 location.draw(window);
             }
             infoWindow.draw(window);
-        }
+                instructionText.setFont(font);
+    instructionText.setString("Display Ports Info - Click ports/routes for details | Press ESC to go back");
+    instructionText.setCharacterSize(20);
+    instructionText.setFillColor(Color::White);
+    instructionText.setOutlineThickness(2);
+    instructionText.setOutlineColor(Color::Black);
+    FloatRect bounds = instructionText.getLocalBounds();
+    instructionText.setOrigin(bounds.left + bounds.width, bounds.top + bounds.height);
+    instructionText.setPosition(windowWidth - 20, windowHeight - 20);
+    window.draw(instructionText);
+}
 else if (currentState == SEARCH_ROUTES) {
     window.draw(mapSprite);
     
@@ -2122,9 +2843,15 @@ else if (currentState == SEARCH_ROUTES) {
     infoWindow.draw(window);
     
     // Instructions
+    instructionText.setFont(font);
+    instructionText.setString("Search for Routes - Click ports/routes for details | Press ESC to go back");
+    instructionText.setCharacterSize(20);
+    instructionText.setFillColor(Color::White);
+    instructionText.setOutlineThickness(2);
+    instructionText.setOutlineColor(Color::Black);
     FloatRect bounds = instructionText.getLocalBounds();
-    instructionText.setOrigin(bounds.left + bounds.width / 2, bounds.top);
-    instructionText.setPosition(windowWidth / 2, 20);
+    instructionText.setOrigin(bounds.left + bounds.width, bounds.top + bounds.height);
+    instructionText.setPosition(windowWidth - 20, windowHeight - 20);
     window.draw(instructionText);
 }
         else if (currentState == SHORTEST_ROUTE_SELECT) {
@@ -2143,51 +2870,66 @@ else if (currentState == SEARCH_ROUTES) {
                 location.draw(window);
             }
             
-            infoWindow.draw(window);
-            
-            FloatRect bounds = instructionText.getLocalBounds();
-            instructionText.setOrigin(bounds.left + bounds.width / 2, bounds.top);
-            instructionText.setPosition(windowWidth / 2, 20);
-            window.draw(instructionText);
-        }
-        else if (currentState == CHEAPEST_ROUTE_SELECT) {
-            window.draw(mapSprite);
-            
-            for (auto& edge : edges) {
-                edge.line.setFillColor(Color(100, 100, 100, 100));
-                edge.draw(window);
-            }
-            
-            for (auto& edge : cheapestPathEdges) {
-                edge.draw(window);
-            }
-            
-            for (auto& location : locations) {
-                location.draw(window);
-            }
-            
-            infoWindow.draw(window);
-            
-            FloatRect bounds = instructionText.getLocalBounds();
-            instructionText.setOrigin(bounds.left + bounds.width / 2, bounds.top);
-            instructionText.setPosition(windowWidth / 2, 20);
-            window.draw(instructionText);
-        }
+    infoWindow.draw(window);
+    
+    instructionText.setFont(font);
+    if (selectedPorts.size() < 2) {
+        instructionText.setString("Click on 2 ports to calculate shortest route (Yellow highlight)");
+    } else {
+        instructionText.setString("Calculating shortest route...");
+    }
+    instructionText.setCharacterSize(24);
+    instructionText.setFillColor(Color::White);
+    instructionText.setOutlineThickness(2);
+    instructionText.setOutlineColor(Color::Black);
+    FloatRect bounds = instructionText.getLocalBounds();
+    instructionText.setOrigin(bounds.left + bounds.width, bounds.top + bounds.height);
+    instructionText.setPosition(windowWidth - 20, windowHeight - 20);
+    window.draw(instructionText);
+}
+ else if (currentState == CHEAPEST_ROUTE_SELECT) {
+    window.draw(mapSprite);
+    
+    for (auto& edge : edges) {
+        edge.line.setFillColor(Color(100, 100, 100, 100));
+        edge.draw(window);
+    }
+    
+    for (auto& edge : shortestPathEdges) {
+        edge.draw(window);
+    }
+    
+    for (auto& location : locations) {
+        location.draw(window);
+    }
+    
+    infoWindow.draw(window);
+    
+    instructionText.setFont(font);
+    if (selectedPorts.size() < 2) {
+        instructionText.setString("Click on 2 ports to calculate cheapest route (Cyan highlight)");
+    } else {
+        instructionText.setString("Calculating cheapest route...");
+    }
+    instructionText.setCharacterSize(24);
+    instructionText.setFillColor(Color::White);
+    instructionText.setOutlineThickness(2);
+    instructionText.setOutlineColor(Color::Black);
+    FloatRect bounds = instructionText.getLocalBounds();
+    instructionText.setOrigin(bounds.left + bounds.width, bounds.top + bounds.height);
+    instructionText.setPosition(windowWidth - 20, windowHeight - 20);
+    window.draw(instructionText);
+}
+else if (currentState == FILTER_PREFERENCES || currentState == FILTER_COMPANIES || 
+         currentState == FILTER_PORTS || currentState == FILTER_TIME || 
+         currentState == FILTER_CUSTOM_COMPANIES || currentState == FILTER_CUSTOM_PORTS || 
+         currentState == FILTER_CUSTOM_TIME) {
+    filterMenu.draw(window);
+}
         else if (currentState == BOOK_CARGO) {
             Text placeholder;
             placeholder.setFont(font);
             placeholder.setString("Book Cargo Routes\n\n(Press ESC to go back)");
-            placeholder.setCharacterSize(40);
-            placeholder.setFillColor(Color::White);
-            FloatRect bounds = placeholder.getLocalBounds();
-            placeholder.setOrigin(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
-            placeholder.setPosition(windowWidth / 2, windowHeight / 2);
-            window.draw(placeholder);
-        }
-        else if (currentState == FILTER_PREFERENCES) {
-            Text placeholder;
-            placeholder.setFont(font);
-            placeholder.setString("Filter Preferences\n\n(Press ESC to go back)");
             placeholder.setCharacterSize(40);
             placeholder.setFillColor(Color::White);
             FloatRect bounds = placeholder.getLocalBounds();
@@ -2228,7 +2970,33 @@ else if (currentState == SEARCH_ROUTES) {
             placeholder.setPosition(windowWidth / 2, windowHeight / 2);
             window.draw(placeholder);
         }
-        
+        else if (currentState == FILTER_RESULT_MAP) {
+    window.draw(mapSprite);
+    
+    // Draw all edges
+    for (auto& edge : edges) {
+        edge.draw(window);
+    }
+    
+    // Draw all locations (with filter colors applied)
+    for (auto& location : locations) {
+        location.draw(window);
+    }
+    
+    infoWindow.draw(window);
+    
+    // Draw instruction text
+    instructionText.setFont(font);
+    instructionText.setString("Filtered Map View - Click ports/routes for details | Press ESC to go back");
+    instructionText.setCharacterSize(20);
+    instructionText.setFillColor(Color::White);
+    instructionText.setOutlineThickness(2);
+    instructionText.setOutlineColor(Color::Black);
+    FloatRect bounds = instructionText.getLocalBounds();
+instructionText.setOrigin(bounds.left + bounds.width, bounds.top + bounds.height);
+instructionText.setPosition(windowWidth - 20, windowHeight - 20);  // Bottom right
+    window.draw(instructionText);
+}
         window.display(); 
     } 
 }
