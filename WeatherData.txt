@@ -1,0 +1,40 @@
+HongKong HighWind Storm
+Durban HeavyRain HighWind
+Oslo Snow Fog
+Genoa HeavyRain
+Osaka Fog HighWind
+Lisbon HighWind
+Hamburg Snow Fog
+Rotterdam Fog HighWind
+Helsinki Snow
+Mumbai HeavyRain HighWind
+Jakarta HeavyRain
+Tokyo Fog HighWind
+Athens HighWind
+CapeTown HeavyRain Storm
+Stockholm Snow
+PortLouis HeavyRain Cyclone
+Dubai HighWind
+Shanghai Fog HeavyRain
+NewYork Snow Storm
+Vancouver Snow Fog
+LosAngeles HighWind
+Antwerp Fog
+Copenhagen Snow
+London Fog HighWind
+AbuDhabi HighWind
+Chittagong HeavyRain
+Karachi HighWind Storm
+Dublin Fog
+Marseille HighWind
+Jeddah HighWind
+Colombo HeavyRain
+Sydney Storm
+Melbourne Snow
+Montreal Snow
+Doha HighWind
+Manila HeavyRain
+Alexandria HighWind
+Istanbul Fog
+Singapore HeavyRain Fog
+Busan Fog HighWind
